@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>マインドマップ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700;900&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root{
+  --bg:#fbf9f4; --panel:#ffffff; --ink:#2b2a28; --sub:#8a8578;
+  --line:#e7e2d6; --accent:#3d7a6e; --accent-ink:#ffffff;
+  --font:"Zen Maru Gothic","Hiragino Maru Gothic ProN",sans-serif;
+  --radius:14px; --root-radius:18px; --link-w:2.5px; --grid:1;
+}
+@media (prefers-color-scheme: dark){
+  body.design-markmap:not([data-theme="light"]){
+    --bg:#181613; --panel:#221f1b; --ink:#f1ede4; --sub:#a39c8c; --line:#332f28;
+  }
+}
+body.design-mac{
+  --bg:#e7e9ee; --panel:#ffffff; --ink:#26282c; --sub:#787d85; --line:#d6d9e0;
+  --accent:#0a84ff; --accent-ink:#ffffff;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Hiragino Sans",sans-serif;
+  --radius:12px; --root-radius:14px; --link-w:2px; --grid:0;
+}
+body.design-gov{
+  --bg:#f8f8fb; --panel:#ffffff; --ink:#1a1a1a; --sub:#626264; --line:#cccccc;
+  --accent:#0017c1; --accent-ink:#ffffff;
+  --font:"Noto Sans JP","Hiragino Sans",sans-serif;
+  --radius:4px; --root-radius:4px; --link-w:2px; --grid:0;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;}
+body{
+  font-family:var(--font);
+  background:var(--bg); color:var(--ink); overflow:hidden;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+#topbar{
+  position:fixed; top:0; left:0; right:0; z-index:20;
+  padding-top:env(safe-area-inset-top,0px);
+  background:linear-gradient(to bottom, var(--panel) 82%, transparent);
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px;
+  border-bottom:1px solid var(--line);
+}
+h1{font-size:15px; font-weight:700; margin:0 8px 0 2px; white-space:nowrap; color:var(--accent);}
+body.design-gov h1{font-weight:900;}
+button, select{
+  font-family:inherit; font-size:13px; font-weight:500; color:var(--ink);
+  background:var(--panel); border:1px solid var(--line); border-radius:8px;
+  padding:7px 11px; cursor:pointer; transition:background .15s, transform .1s;
+}
+body.design-gov button, body.design-gov select{ border-radius:4px; }
+button:hover{background:var(--line);}
+button:active{transform:scale(.96);}
+button.primary{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
+button.primary:hover{filter:brightness(1.08);}
+.spacer{flex:1;}
+#hint{font-size:11.5px; color:var(--sub);}
+#canvas-wrap{
+  position:absolute; inset:0; top:0; overflow:hidden; cursor:grab;
+}
+body.design-markmap #canvas-wrap{
+  background-image:radial-gradient(var(--line) 1px, transparent 1px);
+  background-size:22px 22px;
+}
+body.design-mac #canvas-wrap{
+  background:radial-gradient(ellipse at 30% 20%, #f2f3f7 0%, #dfe2e9 70%);
+}
+#canvas-wrap.grabbing{cursor:grabbing;}
+#canvas{position:absolute; top:0; left:0; transform-origin:0 0;}
+svg#links{position:absolute; overflow:visible; pointer-events:none; top:0; left:0;}
+.node{
+  position:absolute; transform:translate(0,-50%);
+  display:inline-flex; align-items:center; gap:6px; max-width:230px;
+  padding:9px 16px; border-radius:var(--radius); font-size:14.5px; font-weight:500;
+  line-height:1.4; cursor:pointer; white-space:pre-wrap; word-break:break-word;
+  border:2px solid transparent;user-select:none;
+}
+body.design-markmap .node{box-shadow:0 1px 2px rgba(0,0,0,.06), 0 4px 10px rgba(0,0,0,.05);}
+body.design-mac .node{background:var(--panel); box-shadow:0 1px 1px rgba(0,0,0,.05), 0 6px 16px rgba(20,20,30,.10); border-color:#ffffff;}
+body.design-gov .node{background:var(--panel); border:1px solid var(--line); box-shadow:none;}
+.node[data-root="1"]{font-size:17px; font-weight:900; padding:13px 22px; border-radius:var(--root-radius);}
+body.design-mac .node[data-root="1"]{padding-top:20px;}
+.mac-dots{position:absolute; top:7px; left:12px; display:flex; gap:5px;}
+.mac-dots span{width:8px; height:8px; border-radius:50%; display:block;}
+.mac-dots span:nth-child(1){background:#ff5f57;}
+.mac-dots span:nth-child(2){background:#febc2e;}
+.mac-dots span:nth-child(3){background:#28c840;}
+.node.selected{border-color:var(--ink); box-shadow:0 0 0 3px rgba(0,0,0,.10);}
+body.design-gov .node.selected{border-color:var(--accent); box-shadow:0 0 0 2px rgba(0,23,193,.18);}
+.node .text{outline:none;}
+.node .text[contenteditable="true"]{cursor:text;}
+.toggle{
+  position:absolute; width:18px; height:18px; border-radius:50%;
+  background:var(--panel); border:2px solid var(--line); color:var(--sub);
+  font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center;
+  cursor:pointer; right:-9px; top:50%; transform:translateY(-50%); z-index:2;
+}
+body.design-gov .toggle{border-radius:2px;}
+.toggle:hover{border-color:var(--ink); color:var(--ink);}
+#zoomctl{position:fixed; right:14px; bottom:calc(14px + env(safe-area-inset-bottom,0px)); z-index:20; display:flex; flex-direction:column; gap:6px;}
+#zoomctl button{width:34px; height:34px; padding:0; font-size:16px; border-radius:50%;}
+body.design-gov #zoomctl button{border-radius:4px;}
+#colorPop{
+  position:fixed; z-index:30; background:var(--panel); border:1px solid var(--line);
+  border-radius:12px; padding:10px; box-shadow:0 8px 24px rgba(0,0,0,.18); display:none;
+  grid-template-columns:repeat(5,26px); gap:8px;
+}
+#colorPop.open{display:grid;}
+#colorPop .sw{width:26px; height:26px; border-radius:50%; cursor:pointer; border:2px solid rgba(0,0,0,.08);}
+#colorPop input[type="color"]{grid-column:span 5; width:100%; height:26px; padding:0; border:none; cursor:pointer;}
+.modal-overlay{
+  position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.42);
+  display:flex; align-items:center; justify-content:center; padding:20px;
+}
+.modal-box{
+  background:var(--panel); color:var(--ink); border-radius:14px; padding:20px;
+  width:100%; max-width:360px; box-shadow:0 12px 32px rgba(0,0,0,.25);
+}
+body.design-gov .modal-box{border-radius:4px;}
+.modal-msg{font-size:14px; line-height:1.6; margin-bottom:12px; white-space:pre-wrap;}
+.modal-input{
+  width:100%; font-family:inherit; font-size:14px; padding:9px 11px;
+  border:1px solid var(--line); border-radius:8px; margin-bottom:14px; color:var(--ink); background:var(--bg);
+}
+body.design-gov .modal-input{border-radius:4px;}
+.modal-actions{display:flex; justify-content:flex-end; gap:8px;}
+</style>
+</head>
+<body class="design-markmap">
+<div id="topbar">
+  <h1>🧠 マインドマップ</h1>
+  <select id="designSelect">
+    <option value="markmap">markmap風</option>
+    <option value="mac">Mac風</option>
+    <option value="gov">デジタル庁 風</option>
+  </select>
+  <button id="btnChild" class="primary">＋ 子ノード</button>
+  <button id="btnSibling">＋ 兄弟ノード</button>
+  <button id="btnColor">🎨 色</button>
+  <button id="btnDelete">削除</button>
+  <span class="spacer"></span>
+  <button id="btnExport">JSON書き出し</button>
+  <button id="btnImport">読み込み (JSON/.xmind/.md)</button>
+  <button id="btnNew">新規</button>
+  <span id="hint">ダブルクリックで編集 ／ Tab: 子を追加 ／ Enter: 兄弟を追加</span>
+</div>
+<div id="canvas-wrap">
+  <div id="canvas">
+    <svg id="links"></svg>
+  </div>
+</div>
+<div id="zoomctl">
+  <button id="zIn">＋</button>
+  <button id="zReset">⟳</button>
+  <button id="zOut">－</button>
+</div>
+<div id="colorPop"></div>
+<input type="file" id="fileInput" accept=".json,.xmind,.md,.markdown,.txt" style="display:none;">
+
+<script>
+const STORAGE_KEY = 'mindmap-data-v2';
+const PALETTE = ['#e0645f','#3d9188','#d99a35','#5b7cc9','#8a6bc9','#4fae7c','#c9628f','#3fa0c9','#cc7a2e','#557a9e'];
+
+let tree = null;
+let selectedId = null;
+let scale = 1, panX = 80, panY = 0;
+let idSeq = 1;
+let design = 'markmap';
+
+function newId(){ return 'n' + (idSeq++); }
+
+function defaultTree(){
+  idSeq = 1;
+  return {
+    id:newId(), text:'中心テーマ', color:null, collapsed:false,
+    children:[
+      {id:newId(), text:'アイデア 1', color:PALETTE[0], collapsed:false, children:[]},
+      {id:newId(), text:'アイデア 2', color:PALETTE[1], collapsed:false, children:[]},
+      {id:newId(), text:'アイデア 3', color:PALETTE[2], collapsed:false, children:[]}
+    ]
+  };
+}
+
+function cleanReplacer(key, value){
+  if(key.startsWith('_')) return undefined;
+  if(value instanceof HTMLElement) return undefined;
+  return value;
+}
+function save(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({tree, idSeq, design}, cleanReplacer)); }
+  catch(e){ console.error('save failed', e); }
+}
+function load(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      const parsed = JSON.parse(raw);
+      tree = parsed.tree; idSeq = parsed.idSeq || 1; design = parsed.design || 'markmap';
+      return;
+    }
+  }catch(e){ console.error('load failed', e); }
+  tree = defaultTree();
+}
+
+// ---------- custom modal (native alert/confirm/prompt can be silently blocked in a sandboxed frame) ----------
+function showModal({message, input=false, defaultValue='', okText='OK', cancelText='キャンセル', showCancel=true}){
+  return new Promise((resolve)=>{
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-box">
+        <div class="modal-msg"></div>
+        ${input ? '<input type="text" class="modal-input">' : ''}
+        <div class="modal-actions">
+          ${showCancel ? `<button class="modal-cancel">${cancelText}</button>` : ''}
+          <button class="modal-ok primary">${okText}</button>
+        </div>
+      </div>`;
+    overlay.querySelector('.modal-msg').textContent = message || '';
+    document.body.appendChild(overlay);
+    const inputEl = overlay.querySelector('.modal-input');
+    if(inputEl){ inputEl.value = defaultValue; inputEl.focus(); inputEl.select(); }
+    else overlay.querySelector('.modal-ok').focus();
+    const finish = (val)=>{ overlay.remove(); resolve(val); };
+    overlay.querySelector('.modal-ok').onclick = ()=> finish(input ? inputEl.value : true);
+    const cancelBtn = overlay.querySelector('.modal-cancel');
+    if(cancelBtn) cancelBtn.onclick = ()=> finish(input ? null : false);
+    overlay.addEventListener('keydown', (e)=>{
+      e.stopPropagation();
+      if(e.key === 'Enter'){ e.preventDefault(); finish(input ? inputEl.value : true); }
+      if(e.key === 'Escape'){ e.preventDefault(); finish(input ? null : false); }
+    });
+    overlay.addEventListener('click', (e)=>{ if(e.target === overlay) finish(input ? null : false); });
+  });
+}
+function showAlert(message){ return showModal({message, input:false, showCancel:false}); }
+function showConfirm(message){ return showModal({message, input:false}); }
+function showPrompt(message, defaultValue){ return showModal({message, input:true, defaultValue}); }
+
+function findNode(node, id){
+  if(node.id === id) return node;
+  for(const c of node.children){ const r = findNode(c, id); if(r) return r; }
+  return null;
+}
+function findParent(node, id, parent=null){
+  if(node.id === id) return parent;
+  for(const c of node.children){ const r = findParent(c, id, node); if(r) return r; }
+  return null;
+}
+
+// ---------- render (two-pass: measure real DOM size, then position) ----------
+const canvas = document.getElementById('canvas');
+const svg = document.getElementById('links');
+const H_MARGIN = 56, V_GAP = 16;
+
+function buildList(node, parent, depth, inheritedColor, list, itemById){
+  const resolved = depth === 0 ? null : (node.color || inheritedColor);
+  const item = {node, parent, depth, color:resolved, childItems:[]};
+  list.push(item);
+  itemById.set(node.id, item);
+  if(parent) itemById.get(parent.id).childItems.push(item);
+  const expand = !node.collapsed && node.children.length;
+  if(expand){
+    for(const c of node.children) buildList(c, node, depth+1, resolved, list, itemById);
+  }
+  return item;
+}
+
+function createEl(item){
+  const node = item.node;
+  const el = document.createElement('div');
+  el.className = 'node' + (node.id === selectedId ? ' selected' : '');
+  el.dataset.id = node.id;
+  if(item.depth === 0){
+    el.dataset.root = '1';
+    if(design === 'mac'){
+      const dots = document.createElement('div'); dots.className = 'mac-dots';
+      dots.innerHTML = '<span></span><span></span><span></span>';
+      el.appendChild(dots);
+    }
+    if(node.color){ el.style.background = node.color; el.style.color = '#fff'; }
+    else if(design === 'mac'){ el.style.background = 'var(--panel)'; el.style.color = 'var(--ink)'; }
+    else if(design === 'gov'){ el.style.background = 'var(--accent)'; el.style.color = '#fff'; }
+    else { el.style.background = 'var(--ink)'; el.style.color = 'var(--bg)'; }
+  } else {
+    const c = item.color || '#999';
+    if(design === 'gov'){
+      el.style.background = 'var(--panel)';
+      el.style.color = 'var(--ink)';
+      el.style.borderLeft = '4px solid ' + c;
+      el.style.borderTop = el.style.borderRight = el.style.borderBottom = '1px solid var(--line)';
+    } else if(design === 'mac'){
+      el.style.background = 'var(--panel)';
+      el.style.color = 'var(--ink)';
+      el.style.borderLeft = '4px solid ' + c;
+    } else {
+      el.style.background = c + '22';
+      el.style.color = 'var(--ink)';
+      el.style.borderLeft = '4px solid ' + c;
+    }
+  }
+  const span = document.createElement('span');
+  span.className = 'text';
+  span.textContent = node.text;
+  el.appendChild(span);
+
+  if(node.children.length){
+    const t = document.createElement('div');
+    t.className = 'toggle';
+    t.textContent = node.collapsed ? '+' : '\u2013';
+    t.title = node.collapsed ? '展開' : '折りたたむ';
+    t.onclick = (e)=>{ e.stopPropagation(); node.collapsed = !node.collapsed; save(); render(); };
+    el.appendChild(t);
+  }
+  el.addEventListener('click', (e)=>{ e.stopPropagation(); selectNode(node.id); });
+  el.addEventListener('dblclick', (e)=>{ e.stopPropagation(); editNode(node.id); });
+  return el;
+}
+
+function linkPath(x1,y1,x2,y2){
+  if(design === 'gov'){
+    const mx = x1 + Math.max(24,(x2-x1)/2);
+    return `M ${x1} ${y1} L ${mx} ${y1} L ${mx} ${y2} L ${x2} ${y2}`;
+  }
+  const mx = (x1+x2)/2;
+  return `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`;
+}
+
+function render(){
+  canvas.querySelectorAll('.node').forEach(n=>n.remove());
+  const list = [];
+  const itemById = new Map();
+  buildList(tree, null, 0, null, list, itemById);
+  const rootItem = itemById.get(tree.id);
+
+  for(const item of list){
+    item.el = createEl(item);
+    item.el.style.left = '0px'; item.el.style.top = '0px'; item.el.style.visibility = 'hidden';
+    canvas.appendChild(item.el);
+  }
+  for(const item of list){
+    item.w = item.el.offsetWidth;
+    item.h = item.el.offsetHeight;
+  }
+
+  rootItem.x = 0;
+  for(const item of list){
+    if(item.parent){
+      const p = itemById.get(item.parent.id);
+      item.x = p.x + p.w + H_MARGIN;
+    }
+  }
+  let cumY = 0;
+  function assignY(item){
+    if(!item.childItems.length){
+      item.y = cumY + item.h/2; cumY += item.h + V_GAP;
+    } else {
+      for(const c of item.childItems) assignY(c);
+      const first = item.childItems[0], last = item.childItems[item.childItems.length-1];
+      item.y = (first.y + last.y)/2;
+    }
+  }
+  assignY(rootItem);
+
+  let pathsHtml = '', maxX = 0, maxY = 0;
+  for(const item of list){
+    item.el.style.left = item.x + 'px';
+    item.el.style.top = item.y + 'px';
+    item.el.style.visibility = 'visible';
+    maxX = Math.max(maxX, item.x + item.w); maxY = Math.max(maxY, item.y);
+    if(item.parent){
+      const p = itemById.get(item.parent.id);
+      const x1 = p.x + p.w, y1 = p.y, x2 = item.x, y2 = item.y;
+      const strokeColor = design === 'gov' ? 'var(--accent)' : (item.color || '#999');
+      const lw = getComputedStyle(document.body).getPropertyValue('--link-w');
+      pathsHtml += `<path d="${linkPath(x1,y1,x2,y2)}" stroke="${strokeColor}" stroke-width="${lw}" fill="none" opacity="${design==='gov'?0.85:0.55}"/>`;
+    }
+  }
+  svg.innerHTML = pathsHtml;
+  canvas.style.width = (maxX + 300) + 'px';
+  canvas.style.height = (maxY + 200) + 'px';
+  applyTransform();
+  window._rootY = rootItem.y;
+}
+
+function applyTransform(){
+  canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+}
+
+// ---------- selection / editing ----------
+function selectNode(id){ selectedId = id; render(); }
+function deselect(){ selectedId = null; closeColorPop(); render(); }
+
+function editNode(id){
+  const el = canvas.querySelector(`.node[data-id="${id}"] .text`);
+  if(!el) return;
+  el.contentEditable = 'true';
+  el.focus();
+  document.execCommand('selectAll', false, null);
+  const finish = ()=>{
+    el.contentEditable = 'false';
+    const node = findNode(tree, id);
+    node.text = el.textContent.trim() || '(無題)';
+    el.removeEventListener('blur', finish);
+    save(); render();
+  };
+  el.addEventListener('blur', finish);
+  el.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter'){ e.preventDefault(); el.blur(); }
+    if(e.key === 'Escape'){ e.preventDefault(); el.blur(); }
+    e.stopPropagation();
+  });
+}
+
+function addChild(parentId){
+  const parent = findNode(tree, parentId);
+  if(!parent) return;
+  parent.collapsed = false;
+  const color = parent === tree ? PALETTE[parent.children.length % PALETTE.length] : null;
+  const node = {id:newId(), text:'新しいアイデア', color, collapsed:false, children:[]};
+  parent.children.push(node);
+  save(); render(); selectNode(node.id);
+  setTimeout(()=>editNode(node.id), 30);
+}
+function addSibling(id){
+  const parent = findParent(tree, id);
+  if(!parent){ addChild(id); return; }
+  const idx = parent.children.findIndex(c=>c.id===id);
+  const src = parent.children[idx];
+  const node = {id:newId(), text:'新しいアイデア', color:src.color, collapsed:false, children:[]};
+  parent.children.splice(idx+1, 0, node);
+  save(); render(); selectNode(node.id);
+  setTimeout(()=>editNode(node.id), 30);
+}
+async function deleteNode(id){
+  const parent = findParent(tree, id);
+  if(!parent){ await showAlert('中心テーマは削除できません'); return; }
+  parent.children = parent.children.filter(c=>c.id!==id);
+  selectedId = parent.id;
+  save(); render();
+}
+
+// ---------- color picker ----------
+const colorPop = document.getElementById('colorPop');
+function buildColorPop(){
+  colorPop.innerHTML = '';
+  for(const c of PALETTE){
+    const sw = document.createElement('div');
+    sw.className = 'sw'; sw.style.background = c;
+    sw.onclick = ()=>{ applyColor(c); };
+    colorPop.appendChild(sw);
+  }
+  const custom = document.createElement('input');
+  custom.type = 'color'; custom.value = '#888888';
+  custom.oninput = ()=> applyColor(custom.value);
+  colorPop.appendChild(custom);
+}
+function applyColor(c){
+  if(!selectedId) return;
+  const node = findNode(tree, selectedId);
+  node.color = c;
+  save(); render(); closeColorPop();
+}
+function closeColorPop(){ colorPop.classList.remove('open'); }
+document.getElementById('btnColor').onclick = async (e)=>{
+  if(!selectedId){ await showAlert('色を変更するノードを選択してください'); return; }
+  buildColorPop();
+  const r = e.target.getBoundingClientRect();
+  colorPop.style.left = r.left + 'px';
+  colorPop.style.top = (r.bottom + 6) + 'px';
+  colorPop.classList.toggle('open');
+};
+document.addEventListener('click', (e)=>{
+  if(!colorPop.contains(e.target) && e.target.id !== 'btnColor') closeColorPop();
+});
+
+// ---------- design switch ----------
+const designSelect = document.getElementById('designSelect');
+designSelect.onchange = ()=>{
+  design = designSelect.value;
+  document.body.className = 'design-' + design;
+  save(); render();
+};
+
+// ---------- toolbar ----------
+document.getElementById('btnChild').onclick = ()=> addChild(selectedId || tree.id);
+document.getElementById('btnSibling').onclick = ()=> selectedId && addSibling(selectedId);
+document.getElementById('btnDelete').onclick = async ()=>{
+  if(!selectedId) return;
+  if(await showConfirm('このノードとその子を削除しますか？')) deleteNode(selectedId);
+};
+document.getElementById('btnNew').onclick = async ()=>{
+  if(await showConfirm('新しいマインドマップを作成しますか？現在の内容は消えます。')){
+    tree = defaultTree(); selectedId = tree.id; save(); render(); centerView();
+  }
+};
+function withTimeout(promise, ms, label){
+  return Promise.race([
+    promise,
+    new Promise((_, reject)=> setTimeout(()=> reject(new Error(label + 'の処理がタイムアウトしました')), ms))
+  ]);
+}
+
+document.getElementById('btnExport').onclick = ()=>{
+  exportJSON().catch(async (err)=>{
+    console.error('export failed', err);
+    await showAlert('書き出し中にエラーが発生しました: ' + (err && err.message ? err.message : String(err)));
+  });
+};
+
+async function exportJSON(){
+  const base = (tree.text || 'mindmap').replace(/[\\/:*?"<>|]/g,'').trim() || 'mindmap';
+  let filename = await showPrompt('保存するファイル名を入力してください', base + '.json');
+  if(filename === null) return;
+  filename = filename.trim() || (base + '.json');
+  if(!/\.json$/i.test(filename)) filename += '.json';
+  const dataStr = JSON.stringify(tree, cleanReplacer, 2);
+
+  if(window.claude && window.claude.use){
+    let downloads = null;
+    try{ downloads = await withTimeout(window.claude.use('downloads'), 8000, '保存機能の確認'); }
+    catch(err){ console.warn('downloads capability check failed', err); downloads = null; }
+    if(downloads){
+      try{
+        await withTimeout(downloads.save({filename, data: dataStr}), 20000, '保存');
+        await showAlert('「' + filename + '」を保存しました。\nブラウザ（またはアプリ）のダウンロード一覧からご確認ください。');
+      }catch(err){
+        if(err && err.code === 'declined'){
+          await showAlert('保存がキャンセルされました。');
+        } else {
+          await showAlert('保存に失敗しました: ' + (err && err.message ? err.message : String(err)));
+        }
+      }
+    } else {
+      await showAlert('この画面ではファイルの保存機能が利用できないようです。お手数ですが、チャットからダウンロードしたHTML版のマインドマップを開いてお試しください。');
+    }
+    return;
+  }
+  if(window.showSaveFilePicker){
+    try{
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{description:'JSON', accept:{'application/json':['.json']}}]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(dataStr);
+      await writable.close();
+      await showAlert('「' + filename + '」を保存しました。');
+      return;
+    }catch(err){
+      if(err && err.name === 'AbortError') return;
+      console.warn('showSaveFilePicker failed, falling back to anchor download', err);
+    }
+  }
+  const blob = new Blob([dataStr], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  await showAlert('「' + filename + '」をダウンロードしました。\nブラウザのダウンロードフォルダをご確認ください。');
+}
+document.getElementById('btnImport').onclick = ()=> document.getElementById('fileInput').click();
+document.getElementById('fileInput').onchange = async (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  try{
+    let imported;
+    if(ext === 'json'){
+      imported = JSON.parse(await file.text());
+    } else if(ext === 'xmind'){
+      imported = await parseXmindFile(file);
+    } else if(ext === 'md' || ext === 'markdown' || ext === 'txt'){
+      imported = parseMarkdownToTree(await file.text());
+    } else {
+      await showAlert('対応していないファイル形式です（.json / .xmind / .md に対応）');
+      e.target.value = ''; return;
+    }
+    if(!imported || !imported.id) assignIds(imported);
+    assignPaletteColors(imported);
+    tree = imported; selectedId = tree.id; save(); render(); centerView();
+  }catch(err){
+    console.error(err);
+    await showAlert('読み込みに失敗しました: ' + err.message);
+  }
+  e.target.value = '';
+};
+
+function assignIds(node){
+  node.id = newId();
+  node.children = node.children || [];
+  node.collapsed = !!node.collapsed;
+  if(node.color === undefined) node.color = null;
+  node.children.forEach(assignIds);
+}
+function assignPaletteColors(root){
+  (root.children||[]).forEach((c,i)=>{ if(!c.color) c.color = PALETTE[i % PALETTE.length]; });
+}
+
+// ---------- Markdown import (headings + nested bullet/numbered lists) ----------
+function parseMarkdownToTree(text){
+  const lines = text.replace(/\r\n/g,'\n').split('\n');
+  let root = {id:newId(), text:'Imported', color:null, collapsed:false, children:[]};
+  let stack = [{level:0, node:root}];
+  let rootAssigned = false;
+
+  for(let raw of lines){
+    if(!raw.trim()) continue;
+    let m;
+    if((m = raw.match(/^(#{1,6})\s+(.*)$/))){
+      const level = m[1].length;
+      const txt = m[2].trim();
+      if(!rootAssigned){
+        root.text = txt; stack = [{level, node:root}]; rootAssigned = true; continue;
+      }
+      pushNode(level, txt);
+    } else if((m = raw.match(/^(\s*)[-*+]\s+(.*)$/))){
+      const level = 100 + m[1].length;
+      pushNode(level, m[2].trim());
+    } else if((m = raw.match(/^(\s*)\d+[.)]\s+(.*)$/))){
+      const level = 100 + m[1].length;
+      pushNode(level, m[2].trim());
+    } else {
+      const level = (stack[stack.length-1].level) + 1;
+      pushNode(level, raw.trim());
+    }
+  }
+  function pushNode(level, txt){
+    while(stack.length > 1 && stack[stack.length-1].level >= level) stack.pop();
+    const parent = stack[stack.length-1].node;
+    const node = {id:newId(), text:txt, color:null, collapsed:false, children:[]};
+    parent.children.push(node);
+    stack.push({level, node});
+  }
+  return root;
+}
+
+// ---------- .xmind import (supports XMind Zen/2020+ JSON and legacy XML) ----------
+async function parseXmindFile(file){
+  if(typeof JSZip === 'undefined') throw new Error('JSZipの読み込みに失敗しました');
+  const buf = await file.arrayBuffer();
+  const zip = await JSZip.loadAsync(buf);
+  if(zip.file('content.json')){
+    const json = JSON.parse(await zip.file('content.json').async('string'));
+    const sheet = Array.isArray(json) ? json[0] : json;
+    const rootTopic = sheet.rootTopic || sheet.root;
+    return walkXmindJson(rootTopic);
+  } else if(zip.file('content.xml')){
+    const xmlText = await zip.file('content.xml').async('string');
+    const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
+    const childrenByTag = (el, tag)=> Array.from(el.children).filter(c=>c.localName===tag);
+    const sheetEl = childrenByTag(doc.documentElement, 'sheet')[0];
+    if(!sheetEl) throw new Error('シートが見つかりません');
+    const rootTopicEl = childrenByTag(sheetEl, 'topic')[0];
+    return walkXmindXml(rootTopicEl, childrenByTag);
+  }
+  throw new Error('content.json / content.xml が見つかりません');
+}
+function walkXmindJson(topic){
+  const node = {id:newId(), text: (topic && topic.title) || '(無題)', color:null, collapsed:false, children:[]};
+  const attached = topic && topic.children && topic.children.attached;
+  if(Array.isArray(attached)) for(const t of attached) node.children.push(walkXmindJson(t));
+  return node;
+}
+function walkXmindXml(topicEl, childrenByTag){
+  const titleEl = childrenByTag(topicEl, 'title')[0];
+  const node = {id:newId(), text: titleEl ? titleEl.textContent.trim() : '(無題)', color:null, collapsed:false, children:[]};
+  const childrenEl = childrenByTag(topicEl, 'children')[0];
+  if(childrenEl){
+    for(const topicsEl of childrenByTag(childrenEl, 'topics')){
+      const type = topicsEl.getAttribute('type');
+      if(type && type !== 'attached') continue;
+      for(const t of childrenByTag(topicsEl, 'topic')) node.children.push(walkXmindXml(t, childrenByTag));
+    }
+  }
+  return node;
+}
+
+// ---------- zoom / pan ----------
+const wrap = document.getElementById('canvas-wrap');
+document.getElementById('zIn').onclick = ()=>{ scale = Math.min(2.2, scale*1.15); applyTransform(); };
+document.getElementById('zOut').onclick = ()=>{ scale = Math.max(0.3, scale/1.15); applyTransform(); };
+document.getElementById('zReset').onclick = centerView;
+
+function centerView(){
+  scale = 1; panX = 60; panY = wrap.clientHeight/2 - (window._rootY||0); applyTransform();
+}
+
+wrap.addEventListener('wheel', (e)=>{
+  e.preventDefault();
+  const delta = -e.deltaY * 0.0012;
+  scale = Math.min(2.2, Math.max(0.3, scale + delta)); applyTransform();
+}, {passive:false});
+
+let dragging = false, dragStart = {x:0,y:0}, panStart = {x:0,y:0};
+wrap.addEventListener('mousedown', (e)=>{
+  if(e.target.closest('.node')) return;
+  dragging = true; wrap.classList.add('grabbing');
+  dragStart = {x:e.clientX, y:e.clientY}; panStart = {x:panX, y:panY};
+  deselect();
+});
+window.addEventListener('mousemove', (e)=>{
+  if(!dragging) return;
+  panX = panStart.x + (e.clientX - dragStart.x);
+  panY = panStart.y + (e.clientY - dragStart.y);
+  applyTransform();
+});
+window.addEventListener('mouseup', ()=>{ dragging = false; wrap.classList.remove('grabbing'); });
+
+let touchStart = null;
+wrap.addEventListener('touchstart', (e)=>{
+  if(e.target.closest('.node')) return;
+  if(e.touches.length===1){ touchStart = {x:e.touches[0].clientX, y:e.touches[0].clientY, panX, panY}; }
+}, {passive:true});
+wrap.addEventListener('touchmove', (e)=>{
+  if(!touchStart || e.touches.length!==1) return;
+  panX = touchStart.panX + (e.touches[0].clientX - touchStart.x);
+  panY = touchStart.panY + (e.touches[0].clientY - touchStart.y);
+  applyTransform();
+}, {passive:true});
+wrap.addEventListener('touchend', ()=>{ touchStart = null; });
+
+// ---------- keyboard ----------
+document.addEventListener('keydown', (e)=>{
+  if(document.activeElement && document.activeElement.isContentEditable) return;
+  if(!selectedId) return;
+  if(e.key === 'Tab'){ e.preventDefault(); addChild(selectedId); }
+  else if(e.key === 'Enter'){ e.preventDefault(); addSibling(selectedId); }
+  else if(e.key === 'Delete' || e.key === 'Backspace'){ e.preventDefault(); if(selectedId!==tree.id) deleteNode(selectedId); }
+  else if(e.key === 'F2'){ e.preventDefault(); editNode(selectedId); }
+});
+
+// ---------- init ----------
+load();
+document.body.className = 'design-' + design;
+designSelect.value = design;
+selectedId = tree.id;
+render();
+centerView();
+</script>
+</body>
+</html>
