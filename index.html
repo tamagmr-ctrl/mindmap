@@ -6,7 +6,7 @@
 <title>マインドマップ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700;900&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700;900&family=Noto+Sans+JP:wght@400;500;700;900&family=Noto+Serif+JP:wght@400;600;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 :root{
@@ -31,6 +31,36 @@ body.design-gov{
   --accent:#0017c1; --accent-ink:#ffffff;
   --font:"Noto Sans JP","Hiragino Sans",sans-serif;
   --radius:4px; --root-radius:4px; --link-w:2px; --grid:0;
+}
+body.design-bcg{
+  --bg:#ffffff; --panel:#ffffff; --ink:#1c1c1c; --sub:#6b6b6b; --line:#d8dfda;
+  --accent:#0b4f3a; --accent2:#6fcf97; --accent-ink:#ffffff;
+  --font:"Noto Sans JP",-apple-system,sans-serif;
+  --radius:6px; --root-radius:6px; --link-w:2px; --grid:0;
+}
+body.design-mizuho{
+  --bg:#f5f7fa; --panel:#ffffff; --ink:#12233f; --sub:#5b6b83; --line:#d7dee8;
+  --accent:#0b2d5b; --accent2:#c8102e; --accent-ink:#ffffff;
+  --font:"Noto Sans JP",-apple-system,sans-serif;
+  --radius:12px; --root-radius:16px; --link-w:2px; --grid:0;
+}
+body.design-mufg{
+  --bg:#fff8f0; --panel:#ffffff; --ink:#2a1a1a; --sub:#8a7268; --line:#eeddd2;
+  --accent:#d71920; --accent2:#f4a6a8; --accent-ink:#ffffff;
+  --font:"Noto Sans JP",-apple-system,sans-serif;
+  --radius:6px; --root-radius:6px; --link-w:2px; --grid:0;
+}
+body.design-gs{
+  --bg:#ffffff; --panel:#ffffff; --ink:#101b2d; --sub:#5b6b80; --line:#dbe2ea;
+  --accent:#0f2b4c; --accent2:#6b96c3; --accent-ink:#ffffff;
+  --font:"Noto Serif JP","Georgia",serif;
+  --radius:8px; --root-radius:10px; --link-w:1.5px; --grid:0;
+}
+body.design-tel{
+  --bg:#f4f9ff; --panel:#ffffff; --ink:#132433; --sub:#5c7085; --line:#d6e6f5;
+  --accent:#1a73e8; --accent2:#7ed957; --accent-ink:#ffffff;
+  --font:-apple-system,"Noto Sans JP",sans-serif;
+  --radius:10px; --root-radius:12px; --link-w:2px; --grid:0;
 }
 *{box-sizing:border-box;}
 html,body{height:100%;margin:0;}
@@ -139,6 +169,11 @@ body.design-gov .modal-input{border-radius:4px;}
     <option value="markmap">markmap風</option>
     <option value="mac">Mac風</option>
     <option value="gov">デジタル庁 風</option>
+    <option value="bcg">BCG風（戦略コンサル）</option>
+    <option value="mizuho">みずほ風</option>
+    <option value="mufg">三菱UFJ風</option>
+    <option value="gs">ゴールドマン・サックス風</option>
+    <option value="tel">東京エレクトロン風</option>
   </select>
   <button id="btnChild" class="primary">＋ 子ノード</button>
   <button id="btnSibling">＋ 兄弟ノード</button>
@@ -272,6 +307,8 @@ function buildList(node, parent, depth, inheritedColor, list, itemById){
   return item;
 }
 
+const FLAT_THEMES = new Set(['gov','bcg','mizuho','mufg','gs','tel']);
+
 function createEl(item){
   const node = item.node;
   const el = document.createElement('div');
@@ -286,11 +323,12 @@ function createEl(item){
     }
     if(node.color){ el.style.background = node.color; el.style.color = '#fff'; }
     else if(design === 'mac'){ el.style.background = 'var(--panel)'; el.style.color = 'var(--ink)'; }
-    else if(design === 'gov'){ el.style.background = 'var(--accent)'; el.style.color = '#fff'; }
+    else if(FLAT_THEMES.has(design)){ el.style.background = 'var(--accent)'; el.style.color = 'var(--accent-ink)'; }
     else { el.style.background = 'var(--ink)'; el.style.color = 'var(--bg)'; }
+    if(design === 'mizuho'){ el.style.boxShadow = 'inset 0 -4px 0 var(--accent2)'; }
   } else {
     const c = item.color || '#999';
-    if(design === 'gov'){
+    if(FLAT_THEMES.has(design)){
       el.style.background = 'var(--panel)';
       el.style.color = 'var(--ink)';
       el.style.borderLeft = '4px solid ' + c;
@@ -377,9 +415,9 @@ function render(){
     if(item.parent){
       const p = itemById.get(item.parent.id);
       const x1 = p.x + p.w, y1 = p.y, x2 = item.x, y2 = item.y;
-      const strokeColor = design === 'gov' ? 'var(--accent)' : (item.color || '#999');
+      const strokeColor = FLAT_THEMES.has(design) ? 'var(--accent)' : (item.color || '#999');
       const lw = getComputedStyle(document.body).getPropertyValue('--link-w');
-      pathsHtml += `<path d="${linkPath(x1,y1,x2,y2)}" stroke="${strokeColor}" stroke-width="${lw}" fill="none" opacity="${design==='gov'?0.85:0.55}"/>`;
+      pathsHtml += `<path d="${linkPath(x1,y1,x2,y2)}" stroke="${strokeColor}" stroke-width="${lw}" fill="none" opacity="${FLAT_THEMES.has(design)?0.85:0.55}"/>`;
     }
   }
   svg.innerHTML = pathsHtml;
@@ -418,11 +456,19 @@ function editNode(id){
   });
 }
 
+function pickChildColor(index){
+  if(FLAT_THEMES.has(design)){
+    const a = getComputedStyle(document.body).getPropertyValue('--accent').trim();
+    const b = getComputedStyle(document.body).getPropertyValue('--accent2').trim() || a;
+    return index % 2 === 0 ? a : b;
+  }
+  return PALETTE[index % PALETTE.length];
+}
 function addChild(parentId){
   const parent = findNode(tree, parentId);
   if(!parent) return;
   parent.collapsed = false;
-  const color = parent === tree ? PALETTE[parent.children.length % PALETTE.length] : null;
+  const color = parent === tree ? pickChildColor(parent.children.length) : null;
   const node = {id:newId(), text:'新しいアイデア', color, collapsed:false, children:[]};
   parent.children.push(node);
   save(); render(); selectNode(node.id);
