@@ -108,8 +108,18 @@ svg#links{position:absolute; overflow:visible; pointer-events:none; top:0; left:
   position:absolute; transform:translate(0,-50%);
   display:inline-flex; align-items:center; gap:6px; max-width:230px;
   padding:9px 16px; border-radius:var(--radius); font-size:14.5px; font-weight:500;
-  line-height:1.4; cursor:pointer; white-space:pre-wrap; word-break:break-word;
+  line-height:1.4; cursor:grab; white-space:pre-wrap; word-break:break-word;
   border:2px solid transparent;user-select:none;
+}
+.node.dragging{opacity:.25; cursor:grabbing;}
+.node.drop-ok{outline:3px dashed var(--accent); outline-offset:3px; background-color:rgba(0,0,0,.06);}
+.node.drop-bad{outline:3px dashed #d33333; outline-offset:3px; background-color:rgba(211,51,51,.08);}
+.drag-ghost{
+  position:fixed; z-index:200; pointer-events:none; top:0; left:0;
+  padding:9px 16px; border-radius:14px; font-size:14.5px; font-weight:600;
+  background:var(--panel); color:var(--ink); border:2px solid var(--accent);
+  box-shadow:0 10px 26px rgba(0,0,0,.28); white-space:nowrap; max-width:240px;
+  overflow:hidden; text-overflow:ellipsis; will-change:transform;
 }
 body.design-markmap .node{box-shadow:0 1px 2px rgba(0,0,0,.06), 0 4px 10px rgba(0,0,0,.05);}
 body.design-mac .node{background:var(--panel); box-shadow:0 1px 1px rgba(0,0,0,.05), 0 6px 16px rgba(20,20,30,.10); border-color:#ffffff;}
@@ -358,6 +368,15 @@ function createEl(item){
   }
   el.addEventListener('click', (e)=>{ e.stopPropagation(); selectNode(node.id); });
   el.addEventListener('dblclick', (e)=>{ e.stopPropagation(); editNode(node.id); });
+  el.addEventListener('mousedown', (e)=>{
+    if(e.button !== 0 || e.target.isContentEditable || e.target.closest('.toggle')) return;
+    dragState = {id:node.id, startX:e.clientX, startY:e.clientY, dragging:false, currentTarget:null};
+  });
+  el.addEventListener('touchstart', (e)=>{
+    if(e.target.isContentEditable || e.target.closest('.toggle')) return;
+    const t = e.touches[0];
+    dragState = {id:node.id, startX:t.clientX, startY:t.clientY, dragging:false, currentTarget:null};
+  }, {passive:true});
   return el;
 }
 
@@ -770,6 +789,84 @@ wrap.addEventListener('touchmove', (e)=>{
   applyTransform();
 }, {passive:true});
 wrap.addEventListener('touchend', ()=>{ touchStart = null; });
+
+// ---------- drag a node onto another to change its parent (reparent) ----------
+let dragState = null;
+function isInSubtree(node, id){
+  if(node.id === id) return true;
+  return node.children.some(c => isInSubtree(c, id));
+}
+function clearDropHighlight(){
+  canvas.querySelectorAll('.drop-ok,.drop-bad').forEach(n=>n.classList.remove('drop-ok','drop-bad'));
+}
+function updateDropTarget(clientX, clientY){
+  clearDropHighlight();
+  const el = document.elementFromPoint(clientX, clientY);
+  const targetEl = el && el.closest('.node');
+  dragState.currentTarget = null;
+  if(!targetEl || targetEl.dataset.id === dragState.id) return;
+  const draggedNode = findNode(tree, dragState.id);
+  const targetId = targetEl.dataset.id;
+  const ok = draggedNode && !isInSubtree(draggedNode, targetId);
+  targetEl.classList.add(ok ? 'drop-ok' : 'drop-bad');
+  if(ok) dragState.currentTarget = targetId;
+}
+function reparentNode(draggedId, targetId){
+  if(draggedId === tree.id) return;
+  const draggedNode = findNode(tree, draggedId);
+  const oldParent = findParent(tree, draggedId);
+  const targetNode = findNode(tree, targetId);
+  if(!draggedNode || !oldParent || !targetNode) return;
+  if(oldParent.id === targetNode.id) return;
+  oldParent.children = oldParent.children.filter(c => c.id !== draggedId);
+  targetNode.children.push(draggedNode);
+  targetNode.collapsed = false;
+  selectedId = draggedId;
+  save(); render();
+}
+function beginDragVisual(){
+  const el = canvas.querySelector(`.node[data-id="${dragState.id}"]`);
+  if(el) el.classList.add('dragging');
+  const node = findNode(tree, dragState.id);
+  const ghost = document.createElement('div');
+  ghost.className = 'drag-ghost';
+  ghost.textContent = node ? node.text : '';
+  document.body.appendChild(ghost);
+  dragState.ghostEl = ghost;
+}
+function moveGhost(clientX, clientY){
+  if(dragState.ghostEl) dragState.ghostEl.style.transform = `translate(${clientX + 14}px, ${clientY + 14}px)`;
+}
+function endDrag(){
+  if(!dragState) return;
+  const draggedEl = canvas.querySelector(`.node[data-id="${dragState.id}"]`);
+  if(draggedEl) draggedEl.classList.remove('dragging');
+  if(dragState.ghostEl) dragState.ghostEl.remove();
+  clearDropHighlight();
+  if(dragState.dragging && dragState.currentTarget) reparentNode(dragState.id, dragState.currentTarget);
+  dragState = null;
+}
+window.addEventListener('mousemove', (e)=>{
+  if(!dragState) return;
+  const dx = e.clientX - dragState.startX, dy = e.clientY - dragState.startY;
+  if(!dragState.dragging && Math.hypot(dx, dy) > 6){
+    dragState.dragging = true;
+    beginDragVisual();
+  }
+  if(dragState.dragging){ moveGhost(e.clientX, e.clientY); updateDropTarget(e.clientX, e.clientY); }
+});
+window.addEventListener('mouseup', ()=> endDrag());
+window.addEventListener('touchmove', (e)=>{
+  if(!dragState) return;
+  const t = e.touches[0];
+  const dx = t.clientX - dragState.startX, dy = t.clientY - dragState.startY;
+  if(!dragState.dragging && Math.hypot(dx, dy) > 10){
+    dragState.dragging = true;
+    beginDragVisual();
+  }
+  if(dragState.dragging){ e.preventDefault(); moveGhost(t.clientX, t.clientY); updateDropTarget(t.clientX, t.clientY); }
+}, {passive:false});
+window.addEventListener('touchend', ()=> endDrag());
 
 // ---------- keyboard ----------
 document.addEventListener('keydown', (e)=>{
