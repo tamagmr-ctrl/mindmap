@@ -121,6 +121,12 @@ svg#links{position:absolute; overflow:visible; pointer-events:none; top:0; left:
   box-shadow:0 10px 26px rgba(0,0,0,.28); white-space:nowrap; max-width:240px;
   overflow:hidden; text-overflow:ellipsis; will-change:transform;
 }
+.insert-line{
+  position:fixed; z-index:150; pointer-events:none; height:4px;
+  background:var(--accent); border-radius:2px; display:none;
+  box-shadow:0 0 0 2px var(--bg);
+}
+.insert-line.show{display:block;}
 body.design-markmap .node{box-shadow:0 1px 2px rgba(0,0,0,.06), 0 4px 10px rgba(0,0,0,.05);}
 body.design-mac .node{background:var(--panel); box-shadow:0 1px 1px rgba(0,0,0,.05), 0 6px 16px rgba(20,20,30,.10); border-color:#ffffff;}
 body.design-gov .node{background:var(--panel); border:1px solid var(--line); box-shadow:none;}
@@ -206,6 +212,7 @@ body.design-gov .modal-input{border-radius:4px;}
   <button id="zOut">－</button>
 </div>
 <div id="colorPop"></div>
+<div id="insertLine" class="insert-line"></div>
 <input type="file" id="fileInput" accept=".json,.xmind,.md,.markdown,.txt" style="display:none;">
 
 <script>
@@ -790,37 +797,70 @@ wrap.addEventListener('touchmove', (e)=>{
 }, {passive:true});
 wrap.addEventListener('touchend', ()=>{ touchStart = null; });
 
-// ---------- drag a node onto another to change its parent (reparent) ----------
+// ---------- drag a node onto another to reparent it, or near its edge to reorder among siblings ----------
 let dragState = null;
+const insertLine = document.getElementById('insertLine');
 function isInSubtree(node, id){
   if(node.id === id) return true;
   return node.children.some(c => isInSubtree(c, id));
 }
 function clearDropHighlight(){
   canvas.querySelectorAll('.drop-ok,.drop-bad').forEach(n=>n.classList.remove('drop-ok','drop-bad'));
+  insertLine.classList.remove('show');
 }
 function updateDropTarget(clientX, clientY){
   clearDropHighlight();
+  dragState.currentTarget = null;
+  dragState.currentMode = null;
   const el = document.elementFromPoint(clientX, clientY);
   const targetEl = el && el.closest('.node');
-  dragState.currentTarget = null;
   if(!targetEl || targetEl.dataset.id === dragState.id) return;
-  const draggedNode = findNode(tree, dragState.id);
   const targetId = targetEl.dataset.id;
-  const ok = draggedNode && !isInSubtree(draggedNode, targetId);
-  targetEl.classList.add(ok ? 'drop-ok' : 'drop-bad');
-  if(ok) dragState.currentTarget = targetId;
+  const draggedNode = findNode(tree, dragState.id);
+  if(!draggedNode || isInSubtree(draggedNode, targetId)){
+    targetEl.classList.add('drop-bad');
+    return;
+  }
+  const rect = targetEl.getBoundingClientRect();
+  const relY = (clientY - rect.top) / rect.height;
+  const isRoot = targetId === tree.id;
+  let mode = 'into';
+  if(!isRoot){
+    if(relY < 0.3) mode = 'before';
+    else if(relY > 0.7) mode = 'after';
+  }
+  dragState.currentTarget = targetId;
+  dragState.currentMode = mode;
+  if(mode === 'into'){
+    targetEl.classList.add('drop-ok');
+  } else {
+    const y = mode === 'before' ? rect.top : rect.bottom;
+    insertLine.style.left = rect.left + 'px';
+    insertLine.style.top = (y - 2) + 'px';
+    insertLine.style.width = rect.width + 'px';
+    insertLine.classList.add('show');
+  }
 }
-function reparentNode(draggedId, targetId){
+function moveNode(draggedId, targetId, mode){
   if(draggedId === tree.id) return;
   const draggedNode = findNode(tree, draggedId);
   const oldParent = findParent(tree, draggedId);
-  const targetNode = findNode(tree, targetId);
-  if(!draggedNode || !oldParent || !targetNode) return;
-  if(oldParent.id === targetNode.id) return;
-  oldParent.children = oldParent.children.filter(c => c.id !== draggedId);
-  targetNode.children.push(draggedNode);
-  targetNode.collapsed = false;
+  if(!draggedNode || !oldParent) return;
+  if(mode === 'into'){
+    const targetNode = findNode(tree, targetId);
+    if(!targetNode) return;
+    oldParent.children = oldParent.children.filter(c => c.id !== draggedId);
+    targetNode.children.push(draggedNode);
+    targetNode.collapsed = false;
+  } else {
+    const targetParent = findParent(tree, targetId);
+    if(!targetParent) return;
+    oldParent.children = oldParent.children.filter(c => c.id !== draggedId);
+    let idx = targetParent.children.findIndex(c => c.id === targetId);
+    if(idx === -1) idx = targetParent.children.length;
+    else if(mode === 'after') idx += 1;
+    targetParent.children.splice(idx, 0, draggedNode);
+  }
   selectedId = draggedId;
   save(); render();
 }
@@ -843,7 +883,7 @@ function endDrag(){
   if(draggedEl) draggedEl.classList.remove('dragging');
   if(dragState.ghostEl) dragState.ghostEl.remove();
   clearDropHighlight();
-  if(dragState.dragging && dragState.currentTarget) reparentNode(dragState.id, dragState.currentTarget);
+  if(dragState.dragging && dragState.currentTarget) moveNode(dragState.id, dragState.currentTarget, dragState.currentMode);
   dragState = null;
 }
 window.addEventListener('mousemove', (e)=>{
